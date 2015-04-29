@@ -271,12 +271,18 @@ void xusb_report_input(int index, const XINPUT_GAMEPAD *input)
 
 	spin_lock_irqsave(&index_lock, flags);
 
+	if (xusb_ctx[index].active == false) {
+		printk(KERN_ERR "Attempt to report input for inactive device!");
+		goto finish;
+	}
+
 	input_work->input = *input;
 	input_work->input_dev = xusb_ctx[index].input_dev;
 
 	INIT_WORK(&input_work->work, xusb_handle_input);
 	queue_work(xusb_wq[index], &input_work->work);
 
+finish:
 	spin_unlock_irqrestore(&index_lock, flags);
 }
 
