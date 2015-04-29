@@ -83,6 +83,7 @@ static void xpad360_parse_input(void *data, PXINPUT_GAMEPAD out)
 /* Interrupt for incoming URB.  */
 static void xbox360_receive(struct urb* urb)
 {
+#if 1
 	struct xbox360_context *context = urb->context;
 	u8 *data = urb->transfer_buffer;
 
@@ -114,6 +115,7 @@ static void xbox360_receive(struct urb* urb)
 
 finish:
 	usb_submit_urb(urb, GFP_ATOMIC);
+#endif
 }
 
 static struct xusb_driver xbox360_driver = {
@@ -180,6 +182,7 @@ static int xbox360_probe(struct usb_interface *intf,
 
 	usb_set_intfdata(intf, ctx);
 	ctx->usb_intf = intf;
+	ctx->index = index;
 
 	return 0;
 
@@ -201,11 +204,11 @@ static void xbox360_disconnect(struct usb_interface *intf)
 	struct usb_device *usb_dev = interface_to_usbdev(intf);
 	struct urb *in_urb = ctx->in;
 
-	xusb_unregister_device(ctx->index);
+	usb_kill_urb(in_urb);
 	usb_free_coherent(usb_dev, XBOX360_PACKET_SIZE,
 	  in_urb->transfer_buffer, in_urb->transfer_dma);
-	usb_kill_urb(in_urb);
 	usb_free_urb(in_urb);
+	xusb_unregister_device(ctx->index);
 	kfree(ctx);
 }
 

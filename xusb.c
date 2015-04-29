@@ -38,7 +38,7 @@ static const u16 xinput_button_table[16] = {
 };
 
 static const size_t xinput_button_table_sz =
-  sizeof(xinput_button_table) / sizeof(xinput_button_table[0])
+  sizeof(xinput_button_table) / sizeof(xinput_button_table[0]);
 
 static const int xinput_to_codes[16] = {
 	BTN_DPAD_UP,    BTN_DPAD_DOWN,
@@ -82,7 +82,7 @@ static struct xusb_context xusb_ctx[XUSB_MAX_CONTROLLERS] = {{ 0 }};
 
 static void xusb_setup_analog(struct input_dev *input_dev, int code, s16 res)
 {
-	if (res < 0)
+	if (res <= 0)
 		return;
 
 	input_set_capability(input_dev, EV_ABS, code);
@@ -91,8 +91,6 @@ static void xusb_setup_analog(struct input_dev *input_dev, int code, s16 res)
 
 static void xusb_setup_trigger(struct input_dev *input_dev, int code, u8 res)
 {
-	if (res < 0)
-		return;
 
 	input_set_capability(input_dev, EV_ABS, code);
 	input_set_abs_params(input_dev, code, 0, res, 0, 0);
@@ -103,6 +101,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 	struct xusb_context *ctx =
 	  container_of(pwork, struct xusb_context, register_work);
 
+#ifndef DISABLE_INPUT
 	XINPUT_GAMEPAD *Gamepad = &ctx->caps.Gamepad;
 	int i = 0;
 
@@ -121,12 +120,12 @@ static void xusb_handle_register(struct work_struct *pwork)
 		}
 	}
 
-	xusb_setup_trigger(input_dev, Gamepad->bLeftTrigger, ABS_Z);
-	xusb_setup_trigger(input_dev, Gamepad->bRightTrigger, ABS_RZ);
-	xusb_setup_analog(input_dev, Gamepad->sThumbLX, ABS_X);
-	xusb_setup_analog(input_dev, Gamepad->sThumbLY, ABS_Y);
-	xusb_setup_analog(input_dev, Gamepad->sThumbRX, ABS_RX);
-	xusb_setup_analog(input_dev, Gamepad->sThumbRY, ABS_RY);
+	xusb_setup_trigger(input_dev, ABS_Z, Gamepad->bLeftTrigger);
+	xusb_setup_trigger(input_dev, ABS_RZ, Gamepad->bRightTrigger);
+	xusb_setup_analog(input_dev, ABS_X, Gamepad->sThumbLX);
+	xusb_setup_analog(input_dev, ABS_Y, Gamepad->sThumbLY);
+	xusb_setup_analog(input_dev, ABS_RX, Gamepad->sThumbRX);
+	xusb_setup_analog(input_dev, ABS_RY, Gamepad->sThumbRY);
 
 	if (input_register_device(input_dev) != 0) {
 		printk(KERN_ERR "Failed to register input device!");
@@ -135,6 +134,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 	}
 
 	ctx->input_dev = input_dev;
+#endif
 }
 
 static void xusb_handle_unregister(struct work_struct *pwork)
@@ -142,7 +142,9 @@ static void xusb_handle_unregister(struct work_struct *pwork)
 	struct xusb_context *ctx =
 	  container_of(pwork, struct xusb_context, unregister_work);
 
+#ifndef DISABLE_INPUT
 	input_unregister_device(ctx->input_dev);
+#endif
 }
 
 static void xusb_handle_input(struct work_struct *pwork)
@@ -154,22 +156,25 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	/* The Input Subsystem checks for reported features each
 	   time we submit an event. Inefficient but works for our case. */
-
+#ifndef DISABLE_INPUT
 	for (; i < xinput_button_table_sz; ++i) {
 		input_report_key(
 		  ctx->input_dev,
 		  xinput_to_codes[i],
-		  ctx->input->wButtons & xinput_button_table[i]);
+		  ctx->input.wButtons & xinput_button_table[i]);
 	}
 
-	input_report_abs(ctx->input_dev, ABS_Z, ctx->input->bLeftTrigger);
-	input_report_abs(ctx->input_dev, ABS_RZ, ctx->input->bRightTrigger);
+	input_report_abs(ctx->input_dev, ABS_Z, ctx->input.bLeftTrigger);
+	input_report_abs(ctx->input_dev, ABS_RZ, ctx->input.bRightTrigger);
 
-	input_report_abs(ctx->input_dev, ABS_X, ctx->input->sThumbLX);
-	input_report_abs(ctx->input_dev, ABS_Y, ctx->input->sThumbLY);
-	input_report_abs(ctx->input_dev, ABS_RX, ctx->input->sThumbRX);
-	input_report_abs(ctx->input_dev, ABS_RY, ctx->input->sThumbRY);
+	input_report_abs(ctx->input_dev, ABS_X, ctx->input.sThumbLX);
+	input_report_abs(ctx->input_dev, ABS_Y, ctx->input.sThumbLY);
+	input_report_abs(ctx->input_dev, ABS_RX, ctx->input.sThumbRX);
+	input_report_abs(ctx->input_dev, ABS_RY, ctx->input.sThumbRY);
 
+	input_sync(ctx->input_dev);
+
+#endif
 	kfree(ctx);
 }
 
@@ -217,6 +222,10 @@ int xusb_register_device(
   const XINPUT_CAPABILITIES *caps,
   void *context)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&index_lock, flags);
+
 	xusb_ctx[index].active = true;
 	xusb_ctx[index].caps = *caps;
 	xusb_ctx[index].driver = xusb_driver;
@@ -225,6 +234,8 @@ int xusb_register_device(
 	printk("Registering a device for index %i", index);
 
 	queue_work(xusb_wq[index], &xusb_ctx[index].register_work);
+
+	spin_unlock_irqrestore(&index_lock, flags);
 
 	return index;
 }
@@ -239,12 +250,12 @@ void xusb_unregister_device(int index)
 
 	if (index < 0 || index > 3) {
 		printk(KERN_ERR "Attempt to unregister invalid index!");
-		return;
+		goto finish;
 	}
 
 	if (xusb_ctx[index].active == false) {
 		printk(KERN_ERR "Attempt to unregister inactive index!");
-		return;
+		goto finish;
 	}
 
 	xusb_ctx[index].active = false;
@@ -253,24 +264,26 @@ void xusb_unregister_device(int index)
 
 	queue_work(xusb_wq[index], &xusb_ctx[index].unregister_work);
 
+finish:
 	spin_unlock_irqrestore(&index_lock, flags);
 }
 
 void xusb_report_input(int index, const XINPUT_GAMEPAD *input)
 {
 	struct xusb_input_work *input_work =
-	  kmalloc(sizeof(struct xusb_input_work), GFP_ATOMIC);
+	kmalloc(sizeof(struct xusb_input_work), GFP_ATOMIC);
 
 	unsigned long flags;
+
 	spin_lock_irqsave(&index_lock, flags);
 
 	input_work->input = *input;
 	input_work->input_dev = xusb_ctx[index].input_dev;
 
-	spin_unlock_irqrestore(&index_lock, flags);
-
 	INIT_WORK(&input_work->work, xusb_handle_input);
 	queue_work(xusb_wq[index], &input_work->work);
+
+	spin_unlock_irqrestore(&index_lock, flags);
 }
 
 EXPORT_SYMBOL_GPL(xusb_report_input);
