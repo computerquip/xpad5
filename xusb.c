@@ -101,7 +101,6 @@ static void xusb_handle_register(struct work_struct *pwork)
 	struct xusb_context *ctx =
 	  container_of(pwork, struct xusb_context, register_work);
 
-#ifndef DISABLE_INPUT
 	XINPUT_GAMEPAD *Gamepad = &ctx->caps.Gamepad;
 	int i = 0;
 
@@ -134,7 +133,6 @@ static void xusb_handle_register(struct work_struct *pwork)
 	}
 
 	ctx->input_dev = input_dev;
-#endif
 }
 
 static void xusb_handle_unregister(struct work_struct *pwork)
@@ -142,9 +140,7 @@ static void xusb_handle_unregister(struct work_struct *pwork)
 	struct xusb_context *ctx =
 	  container_of(pwork, struct xusb_context, unregister_work);
 
-#ifndef DISABLE_INPUT
 	input_unregister_device(ctx->input_dev);
-#endif
 }
 
 static void xusb_handle_input(struct work_struct *pwork)
@@ -156,7 +152,6 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	/* The Input Subsystem checks for reported features each
 	   time we submit an event. Inefficient but works for our case. */
-#ifndef DISABLE_INPUT
 	for (; i < xinput_button_table_sz; ++i) {
 		input_report_key(
 		  ctx->input_dev,
@@ -174,7 +169,6 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	input_sync(ctx->input_dev);
 
-#endif
 	kfree(ctx);
 }
 
