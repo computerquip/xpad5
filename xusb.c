@@ -166,7 +166,7 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	u16 buttons;
 
-	if (ctx->input_dev) {
+	if (!ctx->input_dev) {
 		printk(KERN_ERR "Attempt to handle input for invalid input device!");
 		return;
 	}
