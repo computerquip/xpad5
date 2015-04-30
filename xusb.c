@@ -107,7 +107,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 	struct input_dev* input_dev = input_allocate_device();
 
 	if (!input_dev) {
-		printk(KERN_ERR "Failed to allocate device!");
+		printk(KERN_ERR "Failed to allocate device!\n");
 
 		return;
 	}
@@ -140,7 +140,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 	xusb_setup_analog(input_dev, ABS_RY, Gamepad->sThumbRY);
 
 	if (input_register_device(input_dev) != 0) {
-		printk(KERN_ERR "Failed to register input device!");
+		printk(KERN_ERR "Failed to register input device!\n");
 		input_free_device(input_dev);
 		return;
 	}
@@ -154,6 +154,7 @@ static void xusb_handle_unregister(struct work_struct *pwork)
 	  container_of(pwork, struct xusb_context, unregister_work);
 
 	input_unregister_device(ctx->input_dev);
+	ctx->input_dev = 0;
 }
 
 static void xusb_handle_input(struct work_struct *pwork)
@@ -163,8 +164,14 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	int i = 0;
 
-	u16 buttons = ctx->input.wButtons;
+	u16 buttons;
 
+	if (ctx->input_dev) {
+		printk(KERN_ERR "Attempt to handle input for invalid input device!");
+		return;
+	}
+
+	buttons = ctx->input.wButtons;
 	/* The Input Subsystem checks for reported features each
 	   time we submit an event. Inefficient but works for our case. */
 	for (; i < xinput_button_table_sz; ++i) {
@@ -246,7 +253,7 @@ int xusb_register_device(
 	xusb_ctx[index].driver = xusb_driver;
 	xusb_ctx[index].context = context;
 
-	printk("Registering a device for index %i", index);
+	printk("Registering a device for index %i\n", index);
 
 	queue_work(xusb_wq[index], &xusb_ctx[index].register_work);
 
@@ -259,17 +266,17 @@ void xusb_unregister_device(int index)
 {
 	unsigned long flags;
 
-	printk("Unregistering a device for index %i", index);
+	printk("Unregistering a device for index %i\n", index);
 
 	spin_lock_irqsave(&index_lock, flags);
 
 	if (index < 0 || index > 3) {
-		printk(KERN_ERR "Attempt to unregister invalid index!");
+		printk(KERN_ERR "Attempt to unregister invalid index!\n");
 		goto finish;
 	}
 
 	if (xusb_ctx[index].active == false) {
-		printk(KERN_ERR "Attempt to unregister inactive index!");
+		printk(KERN_ERR "Attempt to unregister inactive index!\n");
 		goto finish;
 	}
 
@@ -293,7 +300,7 @@ void xusb_report_input(int index, const XINPUT_GAMEPAD *input)
 	spin_lock_irqsave(&index_lock, flags);
 
 	if (xusb_ctx[index].active == false) {
-		printk(KERN_ERR "Attempt to report input for inactive device!");
+		printk(KERN_ERR "Attempt to report input for inactive device!\n");
 		goto finish;
 	}
 

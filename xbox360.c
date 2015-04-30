@@ -58,13 +58,13 @@ static const XINPUT_CAPABILITIES xbox360_capabilities = {
 static void xbox360_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
-	printk(KERN_INFO "Setting vibration!");
+	printk(KERN_INFO "Setting vibration!\n");
 }
 
 static void xbox360_set_led(
   void *data, enum XINPUT_LED_STATUS led)
 {
-	printk(KERN_INFO "Setting LED!");
+	printk(KERN_INFO "Setting LED!\n");
 }
 
 static void xpad360_parse_input(void *data, PXINPUT_GAMEPAD out)

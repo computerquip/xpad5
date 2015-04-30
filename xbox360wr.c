@@ -65,13 +65,13 @@ static const char* xpad360wr_device_names[] = {
 static void xbox360wr_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
-	printk(KERN_INFO "Setting vibration!");
+	printk(KERN_INFO "Setting vibration!\n");
 }
 
 static void xbox360wr_set_led(
   void *data, enum XINPUT_LED_STATUS led)
 {
-	printk(KERN_INFO "Setting LED!");
+	printk(KERN_INFO "Setting LED!\n");
 }
 
 static struct xusb_driver xbox360wr_driver = {
