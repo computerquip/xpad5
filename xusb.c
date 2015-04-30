@@ -18,11 +18,7 @@
 #define XUSB_MAX_CONTROLLERS 4
 
 /* Table and mapping of the buttons. */
-static const u16 xinput_button_table[16] = {
-	XINPUT_GAMEPAD_DPAD_UP,
-	XINPUT_GAMEPAD_DPAD_DOWN,
-	XINPUT_GAMEPAD_DPAD_LEFT,
-	XINPUT_GAMEPAD_DPAD_RIGHT,
+static const u16 xinput_button_table[12] = {
 	XINPUT_GAMEPAD_START,
 	XINPUT_GAMEPAD_BACK,
 	XINPUT_GAMEPAD_LEFT_THUMB,
@@ -40,9 +36,7 @@ static const u16 xinput_button_table[16] = {
 static const size_t xinput_button_table_sz =
   sizeof(xinput_button_table) / sizeof(xinput_button_table[0]);
 
-static const int xinput_to_codes[16] = {
-	BTN_DPAD_UP,    BTN_DPAD_DOWN,
-	BTN_DPAD_LEFT,  BTN_DPAD_RIGHT,
+static const int xinput_to_codes[12] = {
 	BTN_START,      BTN_BACK,
 	BTN_THUMBR,     BTN_THUMBL,
 	BTN_TL,         BTN_TR,
@@ -91,9 +85,15 @@ static void xusb_setup_analog(struct input_dev *input_dev, int code, s16 res)
 
 static void xusb_setup_trigger(struct input_dev *input_dev, int code, u8 res)
 {
-
 	input_set_capability(input_dev, EV_ABS, code);
 	input_set_abs_params(input_dev, code, 0, res, 0, 0);
+}
+
+static void xusb_setup_hatswitch(struct input_dev *input_dev, int code)
+{
+	/* No point in checking the res... we must do this explicitly */
+	input_set_capability(input_dev, EV_ABS, code);
+	input_set_abs_params(input_dev, code, -1, 1, 0, 0);
 }
 
 static void xusb_handle_register(struct work_struct *pwork)
@@ -113,10 +113,23 @@ static void xusb_handle_register(struct work_struct *pwork)
 	}
 
 	for (; i < xinput_button_table_sz; ++i) {
-		if (ctx->caps.Gamepad.wButtons & xinput_button_table[i]) {
+		if (Gamepad->wButtons & xinput_button_table[i]) {
 			input_set_capability(
 			  input_dev, EV_KEY, xinput_to_codes[i]);
 		}
+	}
+
+	/* Unfortunately, for the DPad to use a hatswitch,
+	   we can't iterate over the bits that indicate
+	   hat-switch capability. Perhaps a FIXME. */
+	if ((Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP) &&
+	    (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN)) {
+		xusb_setup_hatswitch(input_dev, ABS_HAT0Y);
+	}
+
+	if ((Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT) &&
+	    (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT)) {
+		xusb_setup_hatswitch(input_dev, ABS_HAT0X);
 	}
 
 	xusb_setup_trigger(input_dev, ABS_Z, Gamepad->bLeftTrigger);
@@ -150,14 +163,22 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	int i = 0;
 
+	u16 buttons = ctx->input.wButtons;
+
 	/* The Input Subsystem checks for reported features each
 	   time we submit an event. Inefficient but works for our case. */
 	for (; i < xinput_button_table_sz; ++i) {
 		input_report_key(
 		  ctx->input_dev,
 		  xinput_to_codes[i],
-		  ctx->input.wButtons & xinput_button_table[i]);
+		  buttons & xinput_button_table[i]);
 	}
+
+	input_report_abs(ctx->input_dev, ABS_HAT0X,
+		!!(buttons & XINPUT_GAMEPAD_DPAD_RIGHT) - !!(buttons & XINPUT_GAMEPAD_DPAD_LEFT));
+
+	input_report_abs(ctx->input_dev, ABS_HAT0Y,
+		!!(buttons & XINPUT_GAMEPAD_DPAD_DOWN) - !!(buttons & XINPUT_GAMEPAD_DPAD_UP));
 
 	input_report_abs(ctx->input_dev, ABS_Z, ctx->input.bLeftTrigger);
 	input_report_abs(ctx->input_dev, ABS_RZ, ctx->input.bRightTrigger);
