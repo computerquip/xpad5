@@ -83,7 +83,6 @@ static void xpad360_parse_input(void *data, PXINPUT_GAMEPAD out)
 /* Interrupt for incoming URB.  */
 static void xbox360_receive(struct urb* urb)
 {
-#if 1
 	struct xbox360_context *context = urb->context;
 	u8 *data = urb->transfer_buffer;
 
@@ -98,12 +97,14 @@ static void xbox360_receive(struct urb* urb)
 		goto finish;
 	}
 
+	/* Packets arrive respective to how the switch is laid out. */
 	switch(le16_to_cpup((u16*)&data[0])) {
-	case 0x0301: /* LED status */
+	case 0x0301: /* LED status */ /* What can we do with this? */
 		break;
-	case 0x0303: /* Possibly a packet concerning rumble effect */
+	case 0x0302: /* Unknown! */
+	case 0x0303: /* Unknown! */
 		break;
-	case 0x0308: /* Attachment */
+	case 0x0308: /* Attachment, Unknown how to handle.*/
 		break;
 	case 0x1400: {
 		XINPUT_GAMEPAD input;
@@ -115,7 +116,6 @@ static void xbox360_receive(struct urb* urb)
 
 finish:
 	usb_submit_urb(urb, GFP_ATOMIC);
-#endif
 }
 
 static struct xusb_driver xbox360_driver = {

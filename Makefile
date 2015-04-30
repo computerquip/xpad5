@@ -1,5 +1,6 @@
 obj-m += xusb.o
 obj-m += xbox360.o
+obj-m += xbox360wr.o
 
 ccflags-y   += -DDEBUG
 
