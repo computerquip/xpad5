@@ -79,6 +79,19 @@ static struct xusb_driver xbox360wr_driver = {
 	.set_vibration = xbox360wr_set_vibration
 };
 
+static void xpad360_parse_input(void *data, XINPUT_GAMEPAD *out)
+{
+	u8 *buffer = data;
+
+	out->wButtons = le16_to_cpup((__le16*)&buffer[0]);
+	out->bLeftTrigger = buffer[2];
+	out->bRightTrigger = buffer[3];
+	out->sThumbLX = (__s16)le16_to_cpup((__le16*)&buffer[4]);
+	out->sThumbLY = (__s16)le16_to_cpup((__le16*)&buffer[6]);
+	out->sThumbRX = (__s16)le16_to_cpup((__le16*)&buffer[8]);
+	out->sThumbRY = (__s16)le16_to_cpup((__le16*)&buffer[10]);
+}
+
 /* Interrupt for incoming URB.  */
 static void xbox360wr_receive(struct urb* urb)
 {
@@ -120,6 +133,8 @@ static void xbox360wr_receive(struct urb* urb)
 			break;
 		}
 	}
+	/* Note that two beginning bytes of all data is something
+	   of unknown use! We just skip over it at this time. */
 	/* Event from Controller */
 	else if (data[0] == 0x00) {
 		u16 header = le16_to_cpup((__le16*)&data[1]);
@@ -128,17 +143,18 @@ static void xbox360wr_receive(struct urb* urb)
 		case 0x0000: /* Unknown! */
 			break;
 
-		case 0x0001: /* Input Event */
-
+		case 0x0001: { /* Input Event */
+			XINPUT_GAMEPAD input;
+			xpad360_parse_input(&data[6], &input);
+			xusb_report_input(ctx->index, &input);
 			break;
-
+		}
 		case 0x000A:
 			/* Packet caused by attachment connection.
 			   An arbitrarily sized description string
 			   delimited by a series of 0xFF bytes. */
 		case 0x0009:
 			/* Packet caused by attachment connection.
-			   First two bytes of this packet is unknown.
 			   14 bytes past that is the serial of the attachment. */
 			break;
 		case 0x01F8:
@@ -153,7 +169,7 @@ static void xbox360wr_receive(struct urb* urb)
 
 			xusb_register_device(ctx->index,
 			  &xbox360wr_driver, &xbox360_capabilities, ctx);
-			
+
 			break;
 		default:
 			printk(KERN_ERR "Unknown packet receieved. Header was %#.8x\n", header);
