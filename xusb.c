@@ -74,6 +74,14 @@ static int num_connected = 0;
 static struct workqueue_struct *xusb_wq[XUSB_MAX_CONTROLLERS] = { 0 };
 static struct xusb_context xusb_ctx[XUSB_MAX_CONTROLLERS] = {{ 0 }};
 
+static int xusb_get_index_from_ctx(struct xusb_context *ctx)
+{
+	/* Take the offset of the address from
+	   the first element in the array of contexts */
+
+	return ctx - xusb_ctx;
+}
+
 static void xusb_setup_analog(struct input_dev *input_dev, int code, s16 res)
 {
 	if (res <= 0)
@@ -146,6 +154,8 @@ static void xusb_handle_register(struct work_struct *pwork)
 	}
 
 	ctx->input_dev = input_dev;
+	ctx->driver->set_led(ctx->context,
+	  XINPUT_LED_ON_1 + xusb_get_index_from_ctx(ctx));
 }
 
 static void xusb_handle_unregister(struct work_struct *pwork)
