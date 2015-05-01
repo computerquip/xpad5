@@ -128,7 +128,7 @@ typedef struct _XINPUT_CAPABILITIES {
 struct xusb_context; /* Opaque type. */
 
 enum XINPUT_LED_STATUS {
-	XINPUT_LED_OFF = 0x40,
+	XINPUT_LED_OFF,
 	XINPUT_LED_ALL_BLINKING,
 	XINPUT_LED_FLASH_ON_1,
 	XINPUT_LED_FLASH_ON_2,

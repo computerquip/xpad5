@@ -85,7 +85,7 @@ static void xbox360wr_set_led(
 	const int unknown_byte = 0x08; /* No clue what this means. */
 
 	u8 packet[LED_PACKET_SIZE] = {
-		0x00, 0x00, unknown_byte, led_status,
+		0x00, 0x00, unknown_byte, led_status + 0x40,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
