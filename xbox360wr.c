@@ -178,7 +178,11 @@ static void xbox360wr_receive(struct urb* urb)
 			/* We don't handle attachments. TODO */
 		case 0x80: {
 			/* Connect */
-			ctx->index = xusb_reserve_index();
+			if (ctx->index == -1) {
+				/* We don't have an index despite connected. */
+				ctx->index = xusb_reserve_index();
+			}
+
 			break;
 		}
 
