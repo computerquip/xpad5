@@ -166,6 +166,11 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	u16 buttons;
 
+	/* What causes this scenario?
+	   This (effectively) catches the issue since
+	   this code is synchronized. However, the ideal
+	   would be to figure out what situation causes this
+	   and have code handle it so this isn't a possibility.*/
 	if (!ctx->input_dev) {
 		printk(KERN_ERR "Attempt to handle input for invalid input device!");
 		return;

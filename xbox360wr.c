@@ -56,6 +56,7 @@ struct xbox360wr_context {
 
 	struct usb_interface *usb_intf;
 	struct urb *in;
+	int pipe_out; /* I don't like the pipe... */
 };
 
 static const char* xpad360wr_device_names[] = {
@@ -72,6 +73,31 @@ static void xbox360wr_set_led(
   void *data, enum XINPUT_LED_STATUS led)
 {
 	printk(KERN_INFO "Setting LED!\n");
+}
+
+static void xbox360wr_query_presence(struct xbox360wr_context *data)
+{
+	int actual_length, error;
+	struct usb_device *usb_dev = interface_to_usbdev(data->usb_intf);
+
+	static u8 packet[] = {
+		0x08, 0x00, 0x0F, 0xC0,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00
+	};
+
+	static const int packet_size = sizeof(packet) / sizeof(packet[0]);
+
+	error =
+	  usb_interrupt_msg(usb_dev, data->pipe_out,
+	    packet, packet_size, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		  "Error code: %d - Actual Length %d\n", error, actual_length);
+	}
+
+	/* Can't really do anything here... */
 }
 
 static struct xusb_driver xbox360wr_driver = {
@@ -205,6 +231,13 @@ static int xbox360wr_probe(struct usb_interface *intf,
 		return -ENOMEM;
 	}
 
+	usb_set_intfdata(intf, ctx);
+	ctx->usb_intf = intf;
+	ctx->index = -1;
+	ctx->pipe_out =
+	  usb_sndintpipe(usb_dev,
+	    intf->cur_altsetting->endpoint[1].desc.bEndpointAddress);
+
 	ctx->in = usb_alloc_urb(0, GFP_KERNEL);
 	if (!ctx->in) {
 		error = -ENOMEM;
@@ -232,10 +265,11 @@ static int xbox360wr_probe(struct usb_interface *intf,
 		goto fail_in_submit;
 	}
 
-	/* TODO: Query presence of controller */
-	usb_set_intfdata(intf, ctx);
-	ctx->usb_intf = intf;
-	ctx->index = -1;
+	/* This will force the controller to resend connection packets.
+	   This is useful in the case we're activating the module even
+	   though the adapter recognizes that a controller is connected.
+	   Otherwise, XUSB won't register input. */
+	xbox360wr_query_presence(ctx);
 
 	return 0;
 
