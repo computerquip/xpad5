@@ -14,6 +14,7 @@ struct xbox360_context {
 
 	struct usb_interface *usb_intf;
 	struct urb *in;
+	int pipe_out;
 };
 
 #define XBOX360_FLAGS \
@@ -62,9 +63,23 @@ static void xbox360_set_vibration(
 }
 
 static void xbox360_set_led(
-  void *data, enum XINPUT_LED_STATUS led)
+  void *data, enum XINPUT_LED_STATUS led_status)
 {
-	printk(KERN_INFO "Setting LED!\n");
+#define LED_PACKET_SIZE 3
+	struct xbox360_context *ctx = data;
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
+	int actual_length, error;
+
+	u8 packet[3] = { 0x01, 0x03, led_status };
+
+	error =
+	  usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	    packet, LED_PACKET_SIZE, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		"Error code: %d - Actual Length %d\n", error, actual_length);
+	}
 }
 
 static void xpad360_parse_input(void *data, PXINPUT_GAMEPAD out)
@@ -149,6 +164,13 @@ static int xbox360_probe(struct usb_interface *intf,
 		goto fail_ctx_alloc;
 	}
 
+	usb_set_intfdata(intf, ctx);
+	ctx->usb_intf = intf;
+	ctx->index = index;
+	ctx->pipe_out =
+	  usb_sndintpipe(usb_dev,
+	    intf->cur_altsetting->endpoint[1].desc.bEndpointAddress);
+
 	ctx->in = usb_alloc_urb(0, GFP_KERNEL);
 	if (!ctx->in) {
 		error = -ENOMEM;
@@ -179,10 +201,6 @@ static int xbox360_probe(struct usb_interface *intf,
 	xusb_register_device(
 		index, &xbox360_driver,
 		&xbox360_capabilities, ctx);
-
-	usb_set_intfdata(intf, ctx);
-	ctx->usb_intf = intf;
-	ctx->index = index;
 
 	return 0;
 
