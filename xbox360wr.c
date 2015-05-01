@@ -80,7 +80,7 @@ static void xbox360wr_query_presence(struct xbox360wr_context *data)
 	int actual_length, error;
 	struct usb_device *usb_dev = interface_to_usbdev(data->usb_intf);
 
-	static u8 packet[] = {
+	u8 packet[] = {
 		0x08, 0x00, 0x0F, 0xC0,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00
