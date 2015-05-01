@@ -229,7 +229,7 @@ static void xbox360_disconnect(struct usb_interface *intf)
 	xusb_unregister_device(ctx->index);
 
 	if (usb_dev->state != USB_STATE_NOTATTACHED)
-		xbox360_set_led(ctx, XINPUT_LED_ALL_BLINKING);
+		xbox360_set_led(ctx, XINPUT_LED_ROTATING);
 
 	kfree(ctx);
 }
