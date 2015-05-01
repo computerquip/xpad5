@@ -82,7 +82,12 @@ static void xbox360wr_set_led(
 	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
 
 	int actual_length, error;
-	const int unknown_byte = 0x00; /* No clue what this means. */
+
+	/* Here's what's knonw about unknown byte:
+	 	- 0x00 will cause nothing to change.
+		- Everything else seems to allow the change.
+		- */
+	const int unknown_byte = 0x01; /* No clue what this means. */
 
 	u8 packet[LED_PACKET_SIZE] = {
 		0x00, 0x00, unknown_byte, led_status + 0x40,
