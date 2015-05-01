@@ -63,6 +63,11 @@ static const char* xpad360wr_device_names[] = {
 	"Xbox 360 Wireless Adapter",
 };
 
+/* There's a lot of oddities with the outward packets.
+   We don't know why or how they are...
+   They're just from observing the packets from the
+   Microsoft driver */
+
 static void xbox360wr_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
@@ -70,27 +75,46 @@ static void xbox360wr_set_vibration(
 }
 
 static void xbox360wr_set_led(
-  void *data, enum XINPUT_LED_STATUS led)
+  void *data, enum XINPUT_LED_STATUS led_status)
 {
-	printk(KERN_INFO "Setting LED!\n");
+#define LED_PACKET_SIZE 10
+	struct xbox360wr_context *ctx = data;
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
+
+	int actual_length, error;
+	const int unknown_byte = 0x08; /* No clue what this means. */
+
+	u8 packet[LED_PACKET_SIZE] = {
+		0x00, 0x00, unknown_byte, led_status,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	error =
+	usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	packet, LED_PACKET_SIZE, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		"Error code: %d - Actual Length %d\n", error, actual_length);
+	}
+
 }
 
-static void xbox360wr_query_presence(struct xbox360wr_context *data)
+static void xbox360wr_query_presence(struct xbox360wr_context *ctx)
 {
+#define PRESENCE_PACKET_SIZE 12
 	int actual_length, error;
-	struct usb_device *usb_dev = interface_to_usbdev(data->usb_intf);
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
 
-	u8 packet[] = {
+	u8 packet[PRESENCE_PACKET_SIZE] = {
 		0x08, 0x00, 0x0F, 0xC0,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00
 	};
 
-	static const int packet_size = sizeof(packet) / sizeof(packet[0]);
-
 	error =
-	  usb_interrupt_msg(usb_dev, data->pipe_out,
-	    packet, packet_size, &actual_length, 0);
+	  usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	    packet, PRESENCE_PACKET_SIZE, &actual_length, 0);
 
 	if (error) {
 		printk(KERN_ERR "Error during submission."
