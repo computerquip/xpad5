@@ -166,7 +166,7 @@ static void xbox360wr_receive(struct urb* urb)
 
 			/* This might happen if we request a
 			   presence packet while we're disconnected */
-			if (ctx->index == -1)
+			if (ctx->index < 0)
 				break;
 
 			xusb_unregister_device(ctx->index);
@@ -323,7 +323,9 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 	usb_free_coherent(usb_dev, XBOX360WR_PACKET_SIZE,
 	in_urb->transfer_buffer, in_urb->transfer_dma);
 	usb_free_urb(in_urb);
-	xusb_unregister_device(ctx->index);
+
+	if (ctx->index >= 0)
+		xusb_unregister_device(ctx->index);
 
 	if (usb_dev->state != USB_STATE_NOTATTACHED)
 		xbox360wr_set_led(ctx, XINPUT_LED_ALTERNATING);
