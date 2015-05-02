@@ -9,35 +9,26 @@ MODULE_LICENSE("GPL");
 
 #define XBOX360WR_PACKET_SIZE 32
 
-/* Temporarily copied from the wired controller until
-   I figure out whether I need to setup a device table
-   or packets are sent with device feature description.*/
-
-#define XBOX360_FLAGS \
-	XINPUT_CAPS_FFB_SUPPORTED
-
-#define XBOX360_BUTTON_MASK \
-	XINPUT_GAMEPAD_DPAD_UP | \
-	XINPUT_GAMEPAD_DPAD_DOWN | \
-	XINPUT_GAMEPAD_DPAD_LEFT | \
-	XINPUT_GAMEPAD_DPAD_RIGHT | \
-	XINPUT_GAMEPAD_START | \
-	XINPUT_GAMEPAD_BACK | \
-	XINPUT_GAMEPAD_LEFT_THUMB | \
-	XINPUT_GAMEPAD_RIGHT_THUMB | \
-	XINPUT_GAMEPAD_LEFT_SHOULDER | \
-	XINPUT_GAMEPAD_RIGHT_SHOULDER | \
-	XINPUT_GAMEPAD_A | \
-	XINPUT_GAMEPAD_B | \
-	XINPUT_GAMEPAD_X | \
-	XINPUT_GAMEPAD_Y
-
-static const XINPUT_CAPABILITIES xbox360_capabilities = {
+static XINPUT_CAPABILITIES xbox360wr_gamepad_caps = {
 	.Type = XINPUT_DEVTYPE_GAMEPAD,
 	.SubType = XINPUT_DEVSUBTYPE_GAMEPAD,
-	.Flags = XBOX360_FLAGS,
+	.Flags = XINPUT_CAPS_FFB_SUPPORTED,
 	.Gamepad = {
-		.wButtons = XBOX360_BUTTON_MASK,
+		.wButtons =
+			XINPUT_GAMEPAD_DPAD_UP |
+			XINPUT_GAMEPAD_DPAD_DOWN |
+			XINPUT_GAMEPAD_DPAD_LEFT |
+			XINPUT_GAMEPAD_DPAD_RIGHT |
+			XINPUT_GAMEPAD_START |
+			XINPUT_GAMEPAD_BACK |
+			XINPUT_GAMEPAD_LEFT_THUMB |
+			XINPUT_GAMEPAD_RIGHT_THUMB |
+			XINPUT_GAMEPAD_LEFT_SHOULDER |
+			XINPUT_GAMEPAD_RIGHT_SHOULDER |
+			XINPUT_GAMEPAD_A |
+			XINPUT_GAMEPAD_B |
+			XINPUT_GAMEPAD_X |
+			XINPUT_GAMEPAD_Y,
 		.bLeftTrigger = 255,
 		.bRightTrigger = 255,
 		.sThumbLX = 32767,
@@ -51,16 +42,19 @@ static const XINPUT_CAPABILITIES xbox360_capabilities = {
 	}
 };
 
+static struct xusb_device xbox360wr_devices[] = {
+	{
+		"Xbox 360 Wireless Receiver",
+		&xbox360wr_gamepad_caps
+	}
+};
+
 struct xbox360wr_context {
 	int index;
 
 	struct usb_interface *usb_intf;
 	struct urb *in;
 	int pipe_out; /* I don't like the pipe... */
-};
-
-static const char* xpad360wr_device_names[] = {
-	"Xbox 360 Wireless Adapter",
 };
 
 /* There's a lot of oddities with the outward packets.
@@ -169,6 +163,12 @@ static void xbox360wr_receive(struct urb* urb)
 		switch (data[1]) {
 		case 0x00:
 			/* Disconnect */
+
+			/* This might happen if we request a
+			   presence packet while we're disconnected */
+			if (ctx->index == -1)
+				break;
+
 			xusb_unregister_device(ctx->index);
 			ctx->index = -1;
 			break;
@@ -178,10 +178,14 @@ static void xbox360wr_receive(struct urb* urb)
 			/* We don't handle attachments. TODO */
 		case 0x80: {
 			/* Connect */
-			if (ctx->index == -1) {
-				/* We don't have an index despite connected. */
-				ctx->index = xusb_reserve_index();
-			}
+
+			/* Might happen if a presence packet is sent
+			   while we're already connected */
+			if (ctx->index != -1)
+			 	break;
+
+			ctx->index = xusb_register_device( /* HARDCODED FIXME */
+				&xbox360wr_driver, &xbox360wr_devices[0], ctx);
 
 			break;
 		}
@@ -192,8 +196,6 @@ static void xbox360wr_receive(struct urb* urb)
 			break;
 		}
 	}
-	/* Note that two beginning bytes of all data is something
-	   of unknown use! We just skip over it at this time. */
 	/* Event from Controller */
 	else if (data[0] == 0x00) {
 		u16 header = le16_to_cpup((__le16*)&data[1]);
@@ -209,11 +211,11 @@ static void xbox360wr_receive(struct urb* urb)
 			break;
 		}
 		case 0x000A:
-			/* Packet caused by attachment connection.
+			/* Occurs after Headset Connection packet (0x40)
 			   An arbitrarily sized description string
 			   delimited by a series of 0xFF bytes. */
 		case 0x0009:
-			/* Packet caused by attachment connection.
+			/* Occurs right after 0x000A. First two bytes are unknown.
 			   14 bytes past that is the serial of the attachment. */
 			break;
 		case 0x01F8:
@@ -222,13 +224,8 @@ static void xbox360wr_receive(struct urb* urb)
 			/* Seems to complement 0x01F8 */
 			break;
 		case 0x000F:
-			/* I believe this to be the announce packet containing
-			   controller capabilities. Haven't figured out its
-			   structure though... yet. */
-
-			xusb_register_device(ctx->index,
-			  &xbox360wr_driver, &xbox360_capabilities, ctx);
-
+			/* Announcement Packet. Unknown layout!
+			   Occurs right after Controller Connection Packet (0x80)*/
 			break;
 		default:
 			printk(KERN_ERR "Unknown packet receieved. Header was %#.8x\n", header);
@@ -299,9 +296,9 @@ static int xbox360wr_probe(struct usb_interface *intf,
 	}
 
 	/* This will force the controller to resend connection packets.
-	   This is useful in the case we're activating the module even
-	   though the adapter recognizes that a controller is connected.
-	   Otherwise, XUSB won't register input. */
+	   This is useful in the case we activate the module after the
+	   adapter has been plugged in, as it won't automatically
+	   send us info about the controllers. */
 	xbox360wr_query_presence(ctx);
 
 	return 0;

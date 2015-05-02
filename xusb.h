@@ -155,10 +155,16 @@ enum XINPUT_LED_STATUS {
    As far as I know though, it's just very low quality raw PCM data being
    sent through the headphones... and raw PCM data being received from the mic.
  */
+
 struct xusb_driver {
 	/* Synonymous to a write callback. */
 	void (*set_led)(void *, enum XINPUT_LED_STATUS);
 	void (*set_vibration)(void *, XINPUT_VIBRATION);
+};
+
+struct xusb_device {
+	const char *name;
+	XINPUT_CAPABILITIES *caps;
 };
 
 /* The XUSB driver is driven by an single threaded workqueue.
@@ -176,13 +182,10 @@ struct xusb_driver {
    This driver will only allow 4 controllers max so no need for complex
    or flexible design here.
  */
-int xusb_reserve_index(void);
-void xusb_release_index(int index);
 
 int xusb_register_device(
-  int index,
   struct xusb_driver *driver,
-  const XINPUT_CAPABILITIES *caps,
+  struct xusb_device *device,
   void *context);
 
 void xusb_unregister_device(int index);

@@ -37,7 +37,7 @@ struct xbox360_context {
 	XINPUT_GAMEPAD_Y
 
 /* All (known) wired controllers have the same capabilities. */
-static const XINPUT_CAPABILITIES xbox360_capabilities = {
+static XINPUT_CAPABILITIES xbox360_gamepad_caps = {
 	.Type = XINPUT_DEVTYPE_GAMEPAD,
 	.SubType = XINPUT_DEVSUBTYPE_GAMEPAD,
 	.Flags = XBOX360_FLAGS,
@@ -54,6 +54,18 @@ static const XINPUT_CAPABILITIES xbox360_capabilities = {
 		.wLeftMotorSpeed = 65535,
 		.wRightMotorSpeed = 65535
 	}
+};
+
+static struct xusb_device xbox360_devices[] = {
+	{
+		"Microsoft X-Box 360 pad",
+		&xbox360_gamepad_caps
+	}
+};
+
+static struct usb_device_id xbox360_table[] = {
+	{ USB_DEVICE_INTERFACE_PROTOCOL(0x045E, 0x028e, 1) },
+	{}
 };
 
 static void xbox360_set_vibration(
@@ -119,7 +131,7 @@ static void xbox360_receive(struct urb* urb)
 	case 0x0302: /* Unknown! */
 	case 0x0303: /* Unknown! */
 		break;
-	case 0x0308: /* Attachment, Unknown how to handle.*/
+	case 0x0308: /* Attachment */
 		break;
 	case 0x1400: {
 		XINPUT_GAMEPAD input;
@@ -152,21 +164,14 @@ static int xbox360_probe(struct usb_interface *intf,
 	void *in_buffer;
 	dma_addr_t in_dma;
 
-	int index = xusb_reserve_index();
-
-	if (index < 0)
-		return -ENODEV;
-
 	ctx = kmalloc(sizeof(struct xbox360_context), GFP_KERNEL);
 
 	if (!ctx) {
-		error = -ENOMEM;
-		goto fail_ctx_alloc;
+		return -ENOMEM;
 	}
 
 	usb_set_intfdata(intf, ctx);
 	ctx->usb_intf = intf;
-	ctx->index = index;
 	ctx->pipe_out =
 	  usb_sndintpipe(usb_dev,
 	    intf->cur_altsetting->endpoint[1].desc.bEndpointAddress);
@@ -198,20 +203,26 @@ static int xbox360_probe(struct usb_interface *intf,
 		goto fail_in_submit;
 	}
 
-	xusb_register_device(
-		index, &xbox360_driver,
-		&xbox360_capabilities, ctx);
+	ctx->index =
+	  xusb_register_device(
+	    &xbox360_driver,
+	    &xbox360_devices[id - xbox360_table], ctx);
+
+	if (ctx->index < 0) {
+		error = -ENODEV;
+		goto fail_index;
+	}
 
 	return 0;
 
+fail_index:
+	usb_kill_urb(ctx->in);
 fail_in_submit:
 	usb_free_coherent(usb_dev, XBOX360_PACKET_SIZE, in_buffer, in_dma);
 fail_alloc_coherent:
 	usb_free_urb(ctx->in);
 fail_urb_alloc:
 	kfree(ctx);
-fail_ctx_alloc:
-	xusb_release_index(index);
 
 	return error;
 }
@@ -233,15 +244,6 @@ static void xbox360_disconnect(struct usb_interface *intf)
 
 	kfree(ctx);
 }
-
-static const char* xbox360_device_names[] = {
-	"Xbox 360 Wired Controller",
-};
-
-static struct usb_device_id xbox360_table[] = {
-	{ USB_DEVICE_INTERFACE_PROTOCOL(0x045E, 0x028e, 1) },
-	{}
-};
 
 static struct usb_driver xbox360_usb_driver = {
 	.name = "xbox360",

@@ -12,8 +12,9 @@
 
 /* TODO:
      - Handle different controller types. Not sure how or why though...
-     - Clean up input spawning code.
-     - Clean up various error scenarios. */
+     - Possibly remove locking. Need to step through each line of code...
+     - Need to have hardware! I can't test enough. I don't even know
+        what parts are fragile and what parts aren't at this point. */
 
 #define XUSB_MAX_CONTROLLERS 4
 
@@ -38,7 +39,7 @@ static const size_t xinput_button_table_sz =
 
 static const int xinput_to_codes[12] = {
 	BTN_START,      BTN_BACK,
-	BTN_THUMBR,     BTN_THUMBL,
+	BTN_THUMBL,     BTN_THUMBR,
 	BTN_TL,         BTN_TR,
 	BTN_MODE,       0,
 	BTN_A,          BTN_B,
@@ -64,12 +65,10 @@ struct xusb_context {
 	struct work_struct register_work;
 	struct work_struct unregister_work;
 
-	XINPUT_CAPABILITIES caps;
+	struct xusb_device *device;
 };
 
 static DEFINE_SPINLOCK(index_lock);
-
-static int num_connected = 0;
 
 static struct workqueue_struct *xusb_wq[XUSB_MAX_CONTROLLERS] = { 0 };
 static struct xusb_context xusb_ctx[XUSB_MAX_CONTROLLERS] = {{ 0 }};
@@ -109,7 +108,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 	struct xusb_context *ctx =
 	  container_of(pwork, struct xusb_context, register_work);
 
-	XINPUT_GAMEPAD *Gamepad = &ctx->caps.Gamepad;
+	XINPUT_GAMEPAD *Gamepad = &ctx->device->caps->Gamepad;
 	int i = 0;
 
 	struct input_dev* input_dev = input_allocate_device();
@@ -215,18 +214,16 @@ static void xusb_handle_input(struct work_struct *pwork)
 	kfree(ctx);
 }
 
-int xusb_reserve_index()
+int xusb_register_device(
+  struct xusb_driver *driver,
+  struct xusb_device *device,
+  void *context)
 {
-	unsigned long flags;
-	u8 index = -1;
 	int i = 0;
+	int index = -1;
+	unsigned long flags;
 
 	spin_lock_irqsave(&index_lock, flags);
-
-	/* Reject it, we're maxed out */
-	if (num_connected == XUSB_MAX_CONTROLLERS) {
-		return -1;
-	}
 
 	for (; i < XUSB_MAX_CONTROLLERS; ++i) {
 		if (xusb_ctx[i].active == false) {
@@ -235,37 +232,14 @@ int xusb_reserve_index()
 		}
 	}
 
-	xusb_ctx[index].active = true;
-
-	spin_unlock_irqrestore(&index_lock, flags);
-
-	return index;
-}
-
-void xusb_release_index(int index)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&index_lock, flags);
-
-	xusb_ctx[index].active = false;
-
-	spin_unlock_irqrestore(&index_lock, flags);
-}
-
-int xusb_register_device(
-  int index,
-  struct xusb_driver *xusb_driver,
-  const XINPUT_CAPABILITIES *caps,
-  void *context)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&index_lock, flags);
+	if (index < 0) {
+		printk(KERN_INFO "Rejected controller: Limit Reached");
+		return -ENODEV;
+	}
 
 	xusb_ctx[index].active = true;
-	xusb_ctx[index].caps = *caps;
-	xusb_ctx[index].driver = xusb_driver;
+	xusb_ctx[index].driver = driver;
+	xusb_ctx[index].device = device;
 	xusb_ctx[index].context = context;
 
 	printk("Registering a device for index %i\n", index);
@@ -285,7 +259,8 @@ void xusb_unregister_device(int index)
 
 	spin_lock_irqsave(&index_lock, flags);
 
-	if (index < 0 || index > 3) {
+#ifdef DEBUG
+	if (index < 0 || index > XUSB_MAX_CONTROLLERS - 1) {
 		printk(KERN_ERR "Attempt to unregister invalid index!\n");
 		goto finish;
 	}
@@ -294,6 +269,7 @@ void xusb_unregister_device(int index)
 		printk(KERN_ERR "Attempt to unregister inactive index!\n");
 		goto finish;
 	}
+#endif
 
 	xusb_ctx[index].active = false;
 	xusb_ctx[index].context = 0;
@@ -330,10 +306,8 @@ finish:
 }
 
 EXPORT_SYMBOL_GPL(xusb_report_input);
-EXPORT_SYMBOL_GPL(xusb_reserve_index);
 EXPORT_SYMBOL_GPL(xusb_unregister_device);
 EXPORT_SYMBOL_GPL(xusb_register_device);
-EXPORT_SYMBOL_GPL(xusb_release_index);
 
 static int __init xusb_init(void)
 {
