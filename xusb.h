@@ -191,3 +191,5 @@ int xusb_register_device(
 void xusb_unregister_device(int index);
 
 void xusb_report_input(int index, const XINPUT_GAMEPAD *input);
+
+void xusb_finish(int index);

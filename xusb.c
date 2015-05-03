@@ -303,6 +303,11 @@ finish:
 	spin_unlock_irqrestore(&index_lock, flags);
 }
 
+void xusb_finish(int index)
+{
+	flush_workqueue(xusb_wq[index]);
+}
+
 EXPORT_SYMBOL_GPL(xusb_report_input);
 EXPORT_SYMBOL_GPL(xusb_unregister_device);
 EXPORT_SYMBOL_GPL(xusb_register_device);

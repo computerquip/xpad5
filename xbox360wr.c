@@ -73,7 +73,25 @@ struct xbox360wr_context {
 static void xbox360wr_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
-	printk(KERN_INFO "Setting vibration!\n");
+#define VIBRATION_PACKET_SIZE 12
+	struct xbox360wr_context *ctx = data;
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
+
+	int actual_length, error;
+
+	u8 packet[VIBRATION_PACKET_SIZE] = {
+		0x00, 0x01, 0x0F, 0xC0, 0x00,
+		ff.wLeftMotorSpeed, ff.wRightMotorSpeed,
+		0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	  packet, VIBRATION_PACKET_SIZE, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		"Error code: %d - Actual Length %d\n", error, actual_length);
+	}
 }
 
 static void xbox360wr_set_led(
@@ -96,9 +114,8 @@ static void xbox360wr_set_led(
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
-	error =
-	usb_interrupt_msg(usb_dev, ctx->pipe_out,
-	packet, LED_PACKET_SIZE, &actual_length, 0);
+	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	  packet, LED_PACKET_SIZE, &actual_length, 0);
 
 	if (error) {
 		printk(KERN_ERR "Error during submission."
@@ -337,6 +354,8 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 
 	if (usb_dev->state != USB_STATE_NOTATTACHED)
 		xbox360wr_set_led(ctx, XINPUT_LED_ALTERNATING);
+
+	xusb_finish(ctx->index);
 
 	kfree(ctx);
 }
