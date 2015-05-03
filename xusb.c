@@ -14,7 +14,10 @@
      - Handle different controller types. Not sure how or why though...
      - Possibly remove locking. Need to step through each line of code...
      - Need to have hardware! I can't test enough. I don't even know
-        what parts are fragile and what parts aren't at this point. */
+        what parts are fragile and what parts aren't at this point.
+   TODO before requesting for patches:
+     - Clean up commit history.
+     - Fix data race between work queue and spinlocks. */
 
 #define XUSB_MAX_CONTROLLERS 4
 
@@ -146,6 +149,8 @@ static void xusb_handle_register(struct work_struct *pwork)
 	xusb_setup_analog(input_dev, ABS_RX, Gamepad->sThumbRX);
 	xusb_setup_analog(input_dev, ABS_RY, Gamepad->sThumbRY);
 
+	input_dev->name = ctx->device->name;
+
 	if (input_register_device(input_dev) != 0) {
 		printk(KERN_ERR "Failed to register input device!\n");
 		input_free_device(input_dev);
@@ -164,6 +169,8 @@ static void xusb_handle_unregister(struct work_struct *pwork)
 
 	input_unregister_device(ctx->input_dev);
 	ctx->input_dev = 0;
+	ctx->context = 0;
+	ctx->driver = 0;
 }
 
 static void xusb_handle_input(struct work_struct *pwork)
@@ -175,11 +182,6 @@ static void xusb_handle_input(struct work_struct *pwork)
 
 	u16 buttons;
 
-	/* What causes this scenario?
-	   This (effectively) catches the issue since
-	   this code is synchronized. However, the ideal
-	   would be to figure out what situation causes this
-	   and have code handle it so this isn't a possibility.*/
 	if (!ctx->input_dev) {
 		printk(KERN_ERR "Attempt to handle input for invalid input device!");
 		return;
@@ -259,7 +261,6 @@ void xusb_unregister_device(int index)
 
 	spin_lock_irqsave(&index_lock, flags);
 
-#ifdef DEBUG
 	if (index < 0 || index > XUSB_MAX_CONTROLLERS - 1) {
 		printk(KERN_ERR "Attempt to unregister invalid index!\n");
 		goto finish;
@@ -269,11 +270,8 @@ void xusb_unregister_device(int index)
 		printk(KERN_ERR "Attempt to unregister inactive index!\n");
 		goto finish;
 	}
-#endif
 
 	xusb_ctx[index].active = false;
-	xusb_ctx[index].context = 0;
-	xusb_ctx[index].driver = 0;
 
 	queue_work(xusb_wq[index], &xusb_ctx[index].unregister_work);
 

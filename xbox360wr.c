@@ -42,10 +42,18 @@ static XINPUT_CAPABILITIES xbox360wr_gamepad_caps = {
 	}
 };
 
+/* There's a finite amount of devices that we can
+   match up to a table instead of dynamically
+   generating the data on the fly. We're not
+   actually provided with capability information
+   anyways... the best we can get is an identifier
+   for the device connected and even then, we're
+   barely managing that with a serial we don't
+   even know is reliable.*/
 static struct xusb_device xbox360wr_devices[] = {
 	{
 		"Xbox 360 Wireless Receiver",
-		&xbox360wr_gamepad_caps
+		&xbox360wr_gamepad_caps,
 	}
 };
 
@@ -77,11 +85,11 @@ static void xbox360wr_set_led(
 
 	int actual_length, error;
 
-	/* Here's what's knonw about unknown byte:
-	 	- 0x00 will cause nothing to change.
-		- Everything else seems to allow the change.
-		- */
-	const int unknown_byte = 0x08; /* No clue what this means. */
+	/* unknown_byte is probably to do with some sort of
+	   message synchronization for things like timers.
+	   It *seems* to work fine without those extra
+	   packets however. I'm not sure about side effects. */
+	const int unknown_byte = 0x08;
 
 	u8 packet[LED_PACKET_SIZE] = {
 		0x00, 0x00, unknown_byte, led_status + 0x40,
