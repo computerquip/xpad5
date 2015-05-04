@@ -349,13 +349,13 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 	in_urb->transfer_buffer, in_urb->transfer_dma);
 	usb_free_urb(in_urb);
 
-	if (ctx->index >= 0)
+	if (ctx->index >= 0) {
 		xusb_unregister_device(ctx->index);
+		xusb_finish(ctx->index);
+	}
 
 	if (usb_dev->state != USB_STATE_NOTATTACHED)
 		xbox360wr_set_led(ctx, XINPUT_LED_ALTERNATING);
-
-	xusb_finish(ctx->index);
 
 	kfree(ctx);
 }
