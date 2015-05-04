@@ -25,6 +25,7 @@ static XINPUT_CAPABILITIES xbox360wr_gamepad_caps = {
 			XINPUT_GAMEPAD_RIGHT_THUMB |
 			XINPUT_GAMEPAD_LEFT_SHOULDER |
 			XINPUT_GAMEPAD_RIGHT_SHOULDER |
+			XINPUT_GAMEPAD_GUIDE |
 			XINPUT_GAMEPAD_A |
 			XINPUT_GAMEPAD_B |
 			XINPUT_GAMEPAD_X |
@@ -355,7 +356,7 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 	}
 
 	if (usb_dev->state != USB_STATE_NOTATTACHED)
-		xbox360wr_set_led(ctx, XINPUT_LED_ALTERNATING);
+		xbox360wr_set_led(ctx, XINPUT_LED_ROTATING);
 
 	kfree(ctx);
 }
