@@ -63,6 +63,25 @@ static struct usb_device_id xbox360_table[] = {
 	{}
 };
 
+static int xbox360_send(struct xbox360_context *ctx, void *data, int size)
+{
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
+	int actual_length = 0, error;
+
+	if (usb_dev->state == USB_STATE_NOTATTACHED)
+		return 0;
+
+	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	  data, size, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		"Error code: %d - Actual Length %d\n", error, actual_length);
+	}
+
+	return actual_length;
+}
+
 static void xbox360_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
@@ -72,21 +91,11 @@ static void xbox360_set_vibration(
 static void xbox360_set_led(
   void *data, enum XINPUT_LED_STATUS led_status)
 {
-#define LED_PACKET_SIZE 3
 	struct xbox360_context *ctx = data;
-	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
-	int actual_length, error;
 
-	u8 packet[3] = { 0x01, 0x03, led_status };
+	u8 packet[] = { 0x01, 0x03, led_status };
 
-	error =
-	  usb_interrupt_msg(usb_dev, ctx->pipe_out,
-	    packet, LED_PACKET_SIZE, &actual_length, 0);
-
-	if (error) {
-		printk(KERN_ERR "Error during submission."
-		"Error code: %d - Actual Length %d\n", error, actual_length);
-	}
+	xbox360_send(ctx, packet, sizeof(packet));
 }
 
 static void xpad360_parse_input(void *data, PXINPUT_GAMEPAD out)
@@ -234,8 +243,7 @@ static void xbox360_disconnect(struct usb_interface *intf)
 	usb_free_urb(in_urb);
 	xusb_unregister_device(ctx->index);
 
-	if (usb_dev->state != USB_STATE_NOTATTACHED)
-		xbox360_set_led(ctx, XINPUT_LED_ROTATING);
+	xbox360_set_led(ctx, XINPUT_LED_ROTATING);
 
 	xusb_finish(ctx->index);
 

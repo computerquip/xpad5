@@ -71,58 +71,58 @@ struct xbox360wr_context {
    They're just from observing the packets from the
    Microsoft driver */
 
+static int xbox360wr_send(struct xbox360wr_context *ctx, void *data, int size)
+{
+	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
+	int actual_length = 0, error;
+
+	if (usb_dev->state == USB_STATE_NOTATTACHED)
+		return 0;
+
+	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
+	  data, size, &actual_length, 0);
+
+	if (error) {
+		printk(KERN_ERR "Error during submission."
+		"Error code: %d - Actual Length %d\n", error, actual_length);
+	}
+
+	return actual_length;
+}
+
 static void xbox360wr_set_vibration(
   void *data, XINPUT_VIBRATION ff)
 {
-#define VIBRATION_PACKET_SIZE 12
 	struct xbox360wr_context *ctx = data;
-	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
 
-	int actual_length, error;
+	s8 left = (ff.wLeftMotorSpeed / 255) - 1;
+	s8 right = (ff.wRightMotorSpeed / 255) - 1;
 
-	u8 packet[VIBRATION_PACKET_SIZE] = {
-		0x00, 0x01, 0x0F, 0xC0, 0x00,
-		ff.wLeftMotorSpeed, ff.wRightMotorSpeed,
-		0x00, 0x00, 0x00, 0x00, 0x00
+	u8 packet[] = {
+		0x00, 0x01,  0x0F, 0xC0,
+		0x00, left, right, 0x00,
+		0x00, 0x00,  0x00, 0x00
 	};
 
-	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
-	  packet, VIBRATION_PACKET_SIZE, &actual_length, 0);
-
-	if (error) {
-		printk(KERN_ERR "Error during submission."
-		"Error code: %d - Actual Length %d\n", error, actual_length);
-	}
+	xbox360wr_send(ctx, packet, sizeof(packet));
 }
 
+/* While this does seem to effectively set the LED,
+   we're probably doing it incorrectly. In order
+   to understand what I'm talking about, you'll
+   need to observe packets sent from the xusb22
+   driver. */
 static void xbox360wr_set_led(
   void *data, enum XINPUT_LED_STATUS led_status)
 {
-#define LED_PACKET_SIZE 10
 	struct xbox360wr_context *ctx = data;
-	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
 
-	int actual_length, error;
-
-	/* unknown_byte is probably to do with some sort of
-	   message synchronization for things like timers.
-	   It *seems* to work fine without those extra
-	   packets however. I'm not sure about side effects. */
-	const int unknown_byte = 0x08;
-
-	u8 packet[LED_PACKET_SIZE] = {
-		0x00, 0x00, unknown_byte, led_status + 0x40,
+	u8 packet[] = {
+		0x00, 0x00, 0x08, led_status + 0x40,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
-	error = usb_interrupt_msg(usb_dev, ctx->pipe_out,
-	  packet, LED_PACKET_SIZE, &actual_length, 0);
-
-	if (error) {
-		printk(KERN_ERR "Error during submission."
-		"Error code: %d - Actual Length %d\n", error, actual_length);
-	}
-
+	xbox360wr_send(ctx, packet, sizeof(packet));
 }
 
 static void xbox360wr_query_presence(struct xbox360wr_context *ctx)
@@ -354,9 +354,6 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 		xusb_unregister_device(ctx->index);
 		xusb_finish(ctx->index);
 	}
-
-	if (usb_dev->state != USB_STATE_NOTATTACHED)
-		xbox360wr_set_led(ctx, XINPUT_LED_ROTATING);
 
 	kfree(ctx);
 }
