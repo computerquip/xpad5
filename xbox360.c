@@ -10,7 +10,7 @@ MODULE_LICENSE("GPL");
 #define XBOX360_PACKET_SIZE 32
 
 struct xbox360_context {
-	int index;
+	struct xusb_context *xusb_ctx;
 
 	struct usb_interface *usb_intf;
 	struct urb *in;
@@ -140,7 +140,7 @@ static void xbox360_receive(struct urb* urb)
 	case 0x1400: {
 		XINPUT_GAMEPAD input;
 		xpad360_parse_input(&data[2], &input);
-		xusb_report_input(context->index, &input);
+		xusb_report_input(context->xusb_ctx, &input);
 		break;
 	}
 	}
@@ -207,19 +207,19 @@ static int xbox360_probe(struct usb_interface *intf,
 		goto fail_in_submit;
 	}
 
-	ctx->index =
+	ctx->xusb_ctx =
 	  xusb_register_device(
 	    &xbox360_driver,
 	    &xbox360_devices[id - xbox360_table], ctx);
 
-	if (ctx->index < 0) {
+	if (ctx->xusb_ctx < 0) {
 		error = -ENODEV;
-		goto fail_index;
+		goto fail_xusb;
 	}
 
 	return 0;
 
-fail_index:
+fail_xusb:
 	usb_kill_urb(ctx->in);
 fail_in_submit:
 	usb_free_coherent(usb_dev, XBOX360_PACKET_SIZE, in_buffer, in_dma);
@@ -241,11 +241,11 @@ static void xbox360_disconnect(struct usb_interface *intf)
 	usb_free_coherent(usb_dev, XBOX360_PACKET_SIZE,
 	  in_urb->transfer_buffer, in_urb->transfer_dma);
 	usb_free_urb(in_urb);
-	xusb_unregister_device(ctx->index);
+	xusb_unregister_device(ctx->xusb_ctx);
 
 	xbox360_set_led(ctx, XINPUT_LED_ROTATING);
 
-	xusb_finish(ctx->index);
+	xusb_flush();
 
 	kfree(ctx);
 }
