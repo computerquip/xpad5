@@ -66,7 +66,8 @@ static struct usb_device_id xbox360_table[] = {
 static int xbox360_send(struct xbox360_context *ctx, void *data, int size)
 {
 	struct usb_device *usb_dev = interface_to_usbdev(ctx->usb_intf);
-	int actual_length = 0, error;
+	int actual_length = 0;
+	int error;
 
 	if (usb_dev->state == USB_STATE_NOTATTACHED)
 		return 0;

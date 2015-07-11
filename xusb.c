@@ -213,7 +213,7 @@ static void xusb_handle_input(struct work_struct *pwork)
 struct xusb_context *xusb_register_device(
   struct xusb_driver *driver,
   struct xusb_device *device,
-  void *context)
+  void *user_data)
 {
 	int index = -1;
 	unsigned long flags;
@@ -226,10 +226,13 @@ struct xusb_context *xusb_register_device(
 	spin_lock_irqsave(&xusb_index_lock, flags);
 
 	for (int i = 0; i < XINPUT_LIMIT; ++i) {
-		if (xusb_index[i] != 0) {
+		if (xusb_index[i] == 0) {
 			index = i;
+			break;
 		}
 	}
+
+	printk("Assigning controller index %d", index);
 
 	if (index >= 0)
 		xusb_index[index] = ctx;
@@ -241,7 +244,7 @@ struct xusb_context *xusb_register_device(
 	ctx->index = index;
 	ctx->driver = driver;
 	ctx->device = device;
-	ctx->user_data = ctx;
+	ctx->user_data = user_data;
 
 	INIT_WORK(&ctx->register_work, xusb_handle_register);
 	INIT_WORK(&ctx->unregister_work, xusb_handle_unregister);
