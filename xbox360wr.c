@@ -59,7 +59,7 @@ static struct xusb_device xbox360wr_devices[] = {
 };
 
 struct xbox360wr_context {
-	int index;
+	struct xusb_context *xusb_ctx;
 
 	struct usb_interface *usb_intf;
 	struct urb *in;
@@ -192,11 +192,11 @@ static void xbox360wr_receive(struct urb* urb)
 
 			/* This might happen if we request a
 			   presence packet while we're disconnected */
-			if (ctx->index < 0)
+			if (!ctx->xusb_ctx)
 				break;
 
-			xusb_unregister_device(ctx->index);
-			ctx->index = -1;
+			xusb_unregister_device(ctx->xusb_ctx);
+			ctx->xusb_ctx = 0;
 			break;
 
 		case 0xC0:
@@ -207,10 +207,10 @@ static void xbox360wr_receive(struct urb* urb)
 
 			/* Might happen if a presence packet is sent
 			   while we're already connected */
-			if (ctx->index != -1)
+			if (ctx->xusb_ctx != 0)
 			 	break;
 
-			ctx->index = xusb_register_device( /* HARDCODED FIXME */
+			ctx->xusb_ctx = xusb_register_device( /* HARDCODED FIXME */
 				&xbox360wr_driver, &xbox360wr_devices[0], ctx);
 
 			break;
@@ -233,7 +233,7 @@ static void xbox360wr_receive(struct urb* urb)
 		case 0x0001: { /* Input Event */
 			XINPUT_GAMEPAD input;
 			xpad360_parse_input(&data[6], &input);
-			xusb_report_input(ctx->index, &input);
+			xusb_report_input(ctx->xusb_ctx, &input);
 			break;
 		}
 		case 0x000A:
@@ -289,7 +289,7 @@ static int xbox360wr_probe(struct usb_interface *intf,
 
 	usb_set_intfdata(intf, ctx);
 	ctx->usb_intf = intf;
-	ctx->index = -1;
+	ctx->xusb_ctx = 0;
 	ctx->pipe_out =
 	  usb_sndintpipe(usb_dev,
 	    intf->cur_altsetting->endpoint[1].desc.bEndpointAddress);
@@ -350,9 +350,9 @@ static void xbox360wr_disconnect(struct usb_interface *intf)
 	in_urb->transfer_buffer, in_urb->transfer_dma);
 	usb_free_urb(in_urb);
 
-	if (ctx->index >= 0) {
-		xusb_unregister_device(ctx->index);
-		xusb_finish(ctx->index);
+	if (ctx->xusb_ctx != 0) {
+		xusb_unregister_device(ctx->xusb_ctx);
+		xusb_flush();
 	}
 
 	kfree(ctx);
