@@ -5,9 +5,9 @@ The goal with this is to provide a generic input layer that I can create an abst
 And the goal for that is to provide an XInput-like API for WINE. 
 
 # Known Driver Implementation Issues:
-  * Synchronization between the workqueue and interrupt handlers is... well... wrong.  
-  * Limitation of 4 controllers. This will certainly need design changes. 
-  * I'm not sure if a single threaded workqueue per controller is appropriate. 
+  * ~~Synchronization between the workqueue and interrupt handlers is... well... wrong.~~
+  * ~~Limitation of 4 controllers. This will certainly need design changes.~~
+  * I'm not sure if a single threaded workqueue per controller is appropriate or one global one is enough.
   * I do not know how to tell different wireless controllers apart. See below. 
   * Outgoing requests should not be synchronous... not sure why I did it that way anymore. 
   
