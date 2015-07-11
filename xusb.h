@@ -183,13 +183,13 @@ struct xusb_device {
    or flexible design here.
  */
 
-int xusb_register_device(
+struct xusb_context* xusb_register_device(
   struct xusb_driver *driver,
   struct xusb_device *device,
   void *context);
 
-void xusb_unregister_device(int index);
+void xusb_unregister_device(struct xusb_context* ctx);
 
-void xusb_report_input(int index, const XINPUT_GAMEPAD *input);
+void xusb_report_input(struct xusb_context* ctx, const XINPUT_GAMEPAD *input);
 
-void xusb_finish(int index);
+void xusb_flush(void);

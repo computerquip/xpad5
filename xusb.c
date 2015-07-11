@@ -19,7 +19,7 @@
      - Clean up commit history.
      - Fix data race between work queue and spinlocks. */
 
-#define XUSB_MAX_CONTROLLERS 4
+#define XINPUT_LIMIT 4
 
 /* Table and mapping of the buttons. */
 static const u16 xinput_button_table[12] = {
@@ -59,9 +59,9 @@ struct xusb_input_work {
 };
 
 struct xusb_context {
-	bool active;
+	u8 index;
 
-	void *context;
+	void *user_data;
 	struct xusb_driver *driver;
 	struct input_dev *input_dev;
 
@@ -71,18 +71,10 @@ struct xusb_context {
 	struct xusb_device *device;
 };
 
-static DEFINE_SPINLOCK(index_lock);
+static struct workqueue_struct *xusb_wq;
 
-static struct workqueue_struct *xusb_wq[XUSB_MAX_CONTROLLERS] = { 0 };
-static struct xusb_context xusb_ctx[XUSB_MAX_CONTROLLERS] = {{ 0 }};
-
-static int xusb_get_index_from_ctx(struct xusb_context *ctx)
-{
-	/* Take the offset of the address from
-	   the first element in the array of contexts */
-
-	return ctx - xusb_ctx;
-}
+static struct xusb_context *xusb_index[4] = { 0 };
+static DEFINE_SPINLOCK(xusb_index_lock);
 
 static void xusb_setup_analog(struct input_dev *input_dev, int code, s16 res)
 {
@@ -112,7 +104,6 @@ static void xusb_handle_register(struct work_struct *pwork)
 	  container_of(pwork, struct xusb_context, register_work);
 
 	XINPUT_GAMEPAD *Gamepad = &ctx->device->caps->Gamepad;
-	int i = 0;
 
 	struct input_dev* input_dev = input_allocate_device();
 
@@ -122,7 +113,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 		return;
 	}
 
-	for (; i < xinput_button_table_sz; ++i) {
+	for (int i = 0; i < xinput_button_table_sz; ++i) {
 		if (Gamepad->wButtons & xinput_button_table[i]) {
 			input_set_capability(
 			  input_dev, EV_KEY, xinput_to_codes[i]);
@@ -158,8 +149,11 @@ static void xusb_handle_register(struct work_struct *pwork)
 	}
 
 	ctx->input_dev = input_dev;
-	ctx->driver->set_led(ctx->context,
-	  XINPUT_LED_ON_1 + xusb_get_index_from_ctx(ctx));
+
+	if (ctx->index != -1) { 
+		ctx->driver->set_led(ctx->user_data,
+	  	    XINPUT_LED_ON_1 + ctx->index);
+	}
 }
 
 static void xusb_handle_unregister(struct work_struct *pwork)
@@ -169,16 +163,16 @@ static void xusb_handle_unregister(struct work_struct *pwork)
 
 	input_unregister_device(ctx->input_dev);
 	ctx->input_dev = 0;
-	ctx->context = 0;
+	ctx->user_data = 0;
 	ctx->driver = 0;
+
+	kfree(ctx);
 }
 
 static void xusb_handle_input(struct work_struct *pwork)
 {
 	struct xusb_input_work *ctx =
 	  container_of(pwork, struct xusb_input_work, work);
-
-	int i = 0;
 
 	u16 buttons;
 
@@ -190,7 +184,7 @@ static void xusb_handle_input(struct work_struct *pwork)
 	buttons = ctx->input.wButtons;
 	/* The Input Subsystem checks for reported features each
 	   time we submit an event. Inefficient but works for our case. */
-	for (; i < xinput_button_table_sz; ++i) {
+	for (int i = 0; i < xinput_button_table_sz; ++i) {
 		input_report_key(
 		  ctx->input_dev,
 		  xinput_to_codes[i],
@@ -216,120 +210,92 @@ static void xusb_handle_input(struct work_struct *pwork)
 	kfree(ctx);
 }
 
-int xusb_register_device(
+struct xusb_context *xusb_register_device(
   struct xusb_driver *driver,
   struct xusb_device *device,
   void *context)
 {
-	int i = 0;
 	int index = -1;
 	unsigned long flags;
+	struct xusb_context *ctx;
 
-	spin_lock_irqsave(&index_lock, flags);
+	/* FIXME: Should be allocated from a pre-allocated pool
+	          specific to the xusb module.  */
+	ctx = kmalloc(sizeof(struct xusb_context), GFP_ATOMIC);
 
-	for (; i < XUSB_MAX_CONTROLLERS; ++i) {
-		if (xusb_ctx[i].active == false) {
+	spin_lock_irqsave(&xusb_index_lock, flags);
+
+	for (int i = 0; i < XINPUT_LIMIT; ++i) {
+		if (xusb_index[i] != 0) {
 			index = i;
-			break;
 		}
 	}
 
-	if (index < 0) {
-		printk(KERN_INFO "Rejected controller: Limit Reached");
-		return -ENODEV;
-	}
+	if (index >= 0)
+		xusb_index[index] = ctx;
+	else
+		printk("More than 4 XInput controllers connected.");
 
-	xusb_ctx[index].active = true;
-	xusb_ctx[index].driver = driver;
-	xusb_ctx[index].device = device;
-	xusb_ctx[index].context = context;
+	spin_unlock_irqrestore(&xusb_index_lock, flags);
 
-	printk("Registering a device for index %i\n", index);
+	ctx->index = index;
+	ctx->driver = driver;
+	ctx->device = device;
+	ctx->user_data = ctx;
 
-	queue_work(xusb_wq[index], &xusb_ctx[index].register_work);
+	INIT_WORK(&ctx->register_work, xusb_handle_register);
+	INIT_WORK(&ctx->unregister_work, xusb_handle_unregister);
 
-	spin_unlock_irqrestore(&index_lock, flags);
+	queue_work(xusb_wq, &ctx->register_work);
 
-	return index;
+	return ctx;
 }
 
-void xusb_unregister_device(int index)
+void xusb_unregister_device(struct xusb_context *ctx)
 {
 	unsigned long flags;
 
-	printk("Unregistering a device for index %i\n", index);
-
-	spin_lock_irqsave(&index_lock, flags);
-
-	if (index < 0 || index > XUSB_MAX_CONTROLLERS - 1) {
-		printk(KERN_ERR "Attempt to unregister invalid index!\n");
-		goto finish;
+	if (ctx->index != -1) {
+		spin_lock_irqsave(&xusb_index_lock, flags);
+		xusb_index[ctx->index] = 0;
+		spin_unlock_irqrestore(&xusb_index_lock, flags);
 	}
 
-	if (xusb_ctx[index].active == false) {
-		printk(KERN_ERR "Attempt to unregister inactive index!\n");
-		goto finish;
-	}
-
-	xusb_ctx[index].active = false;
-
-	queue_work(xusb_wq[index], &xusb_ctx[index].unregister_work);
-
-finish:
-	spin_unlock_irqrestore(&index_lock, flags);
+	queue_work(xusb_wq, &ctx->unregister_work);
 }
 
-void xusb_report_input(int index, const XINPUT_GAMEPAD *input)
+void xusb_report_input(struct xusb_context *ctx, const XINPUT_GAMEPAD *input)
 {
 	struct xusb_input_work *input_work =
 	kmalloc(sizeof(struct xusb_input_work), GFP_ATOMIC);
 
-	unsigned long flags;
-
-	spin_lock_irqsave(&index_lock, flags);
-
-	if (xusb_ctx[index].active == false) {
-		printk(KERN_ERR "Attempt to report input for inactive device!\n");
-		goto finish;
-	}
+	if (!input_work)
+			return;
 
 	input_work->input = *input;
-	input_work->input_dev = xusb_ctx[index].input_dev;
+	input_work->input_dev = ctx->input_dev;
 
 	INIT_WORK(&input_work->work, xusb_handle_input);
-	queue_work(xusb_wq[index], &input_work->work);
-
-finish:
-	spin_unlock_irqrestore(&index_lock, flags);
+	queue_work(xusb_wq, &input_work->work);
 }
 
-void xusb_finish(int index)
+void xusb_flush(void)
 {
-	flush_workqueue(xusb_wq[index]);
+	flush_workqueue(xusb_wq);
 }
 
 EXPORT_SYMBOL_GPL(xusb_report_input);
 EXPORT_SYMBOL_GPL(xusb_unregister_device);
 EXPORT_SYMBOL_GPL(xusb_register_device);
-EXPORT_SYMBOL_GPL(xusb_finish);
+EXPORT_SYMBOL_GPL(xusb_flush);
 
 static int __init xusb_init(void)
 {
-	int i = 0, k = 0;
 
-	for (; i < XUSB_MAX_CONTROLLERS; ++i) {
-		xusb_wq[i] = alloc_ordered_workqueue("xusb%d", 0, i);
+	xusb_wq = alloc_ordered_workqueue("xusb", 0);
 
-		if (xusb_wq[i] == NULL) {
-			for (; k < i; ++k) {
-				destroy_workqueue(xusb_wq[k]);
-			}
-
-			return -ENOMEM;
-		}
-
-		INIT_WORK(&xusb_ctx[i].register_work, xusb_handle_register);
-		INIT_WORK(&xusb_ctx[i].unregister_work, xusb_handle_unregister);
+	if (xusb_wq == NULL) {
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -337,16 +303,11 @@ static int __init xusb_init(void)
 
 static void __exit xusb_exit(void)
 {
-	int i = 0;
-
-	for (; i < XUSB_MAX_CONTROLLERS; ++i) {
-		if (xusb_wq[i] != NULL)
-			destroy_workqueue(xusb_wq[i]);
-	}
+	destroy_workqueue(xusb_wq);
 }
 
 
-MODULE_AUTHOR("Zachary Lund <admin@computerquip.com>");
+MODULE_AUTHOR("Zachary Lund <admin@computerquip`m>");
 MODULE_DESCRIPTION("Common Xbox Controller Interface");
 MODULE_LICENSE("GPL");
 
