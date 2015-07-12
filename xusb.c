@@ -20,6 +20,7 @@
      - Fix data race between work queue and spinlocks. */
 
 #define XINPUT_LIMIT 4
+#define XINPUT_INVALID -1
 
 /* Table and mapping of the buttons. */
 static const u16 xinput_button_table[12] = {
@@ -150,7 +151,7 @@ static void xusb_handle_register(struct work_struct *pwork)
 
 	ctx->input_dev = input_dev;
 
-	if (ctx->index != -1) { 
+	if (ctx->index != XINPUT_INVALID) {
 		ctx->driver->set_led(ctx->user_data,
 	  	    XINPUT_LED_ON_1 + ctx->index);
 	}
@@ -215,7 +216,7 @@ struct xusb_context *xusb_register_device(
   struct xusb_device *device,
   void *user_data)
 {
-	int index = -1;
+	int index = XINPUT_INVALID;
 	unsigned long flags;
 	struct xusb_context *ctx;
 
@@ -234,10 +235,10 @@ struct xusb_context *xusb_register_device(
 
 	printk("Assigning controller index %d", index);
 
-	if (index >= 0)
-		xusb_index[index] = ctx;
-	else
+	if (index == XINPUT_INVALID)
 		printk("More than 4 XInput controllers connected.");
+	else
+		xusb_index[index] = ctx;
 
 	spin_unlock_irqrestore(&xusb_index_lock, flags);
 
@@ -258,7 +259,7 @@ void xusb_unregister_device(struct xusb_context *ctx)
 {
 	unsigned long flags;
 
-	if (ctx->index != -1) {
+	if (ctx->index != XINPUT_INVALID) {
 		spin_lock_irqsave(&xusb_index_lock, flags);
 		xusb_index[ctx->index] = 0;
 		spin_unlock_irqrestore(&xusb_index_lock, flags);
@@ -279,6 +280,7 @@ void xusb_report_input(struct xusb_context *ctx, const XINPUT_GAMEPAD *input)
 	input_work->input_dev = ctx->input_dev;
 
 	INIT_WORK(&input_work->work, xusb_handle_input);
+
 	queue_work(xusb_wq, &input_work->work);
 }
 
